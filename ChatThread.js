@@ -28,7 +28,7 @@ export function ChatThread({ messages, busy, finalPiece, pair }) {
           "div",
           { className: "chat-empty" },
           h("div", { className: "chat-empty-pair" }, `${pair?.[0] || ""} + ${pair?.[1] || ""}`),
-          h("p", null, "Find one connection between these two nouns. A small, strange, or unfinished thought is enough.")
+          h("p", null, "List as many connections as you can. Fragments, weird links, opposites, and half-formed ideas all count.")
         ),
       busy
         ? h(

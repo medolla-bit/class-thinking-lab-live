@@ -42,7 +42,7 @@ export function ExportPanel({ kind, payload }) {
 }
 
 export function teacherCsv(session) {
-  const rows = [["Name", "Thought 1", "Thought 2", "Thought 3", "Nudges Used", "Final Piece"]];
+  const rows = [["Name", "First Connections", "Twists + Surprises", "Strongest Lines", "Nudges Used", "Final Piece"]];
   for (const student of session.students || []) {
     rows.push([
       student.name,

@@ -10,7 +10,8 @@ const errorText = "Something went wrong. Try again.";
 function responseText(session) {
   return (session.students || [])
     .map((student) => {
-      const thoughts = (student.thoughts || []).map((thought, index) => `Thought ${index + 1}: ${thought}`).join("\n");
+      const labels = ["First Connections", "Twists + Surprises", "Strongest Lines"];
+      const thoughts = (student.thoughts || []).map((thought, index) => `${labels[index] || `Idea Burst ${index + 1}`}: ${thought}`).join("\n");
       return `${student.name}\n${thoughts}\nFinal: ${student.finalPiece || ""}`;
     })
     .join("\n\n");
@@ -196,7 +197,7 @@ export function TeacherDashboard({ initialLevel, initialPairIndex }) {
           (session.students || []).length
             ? session.students.map((student) => h("tr", { key: student.id },
               h("td", null, student.name),
-              h("td", null, (student.thoughts || []).map((thought, index) => h("p", { className: "mini", key: index }, `${index + 1}. ${thought}`))),
+              h("td", null, (student.thoughts || []).map((thought, index) => h("p", { className: "mini", key: index }, `${["First", "Twist", "Strong"][index] || index + 1}: ${thought}`))),
               h("td", null, student.nudgeCount || 0),
               h("td", { className: "mini" }, student.finalPiece || "")
             ))

@@ -76,7 +76,7 @@ export function SoloMode({ level, pair }) {
     return [
       `${pair[0]} and ${pair[1]}`,
       "",
-      "Thoughts:",
+      "Idea bursts:",
       ...thoughts.map((item, index) => `${index + 1}. ${item}`),
       "",
       finalPiece
@@ -111,13 +111,13 @@ export function SoloMode({ level, pair }) {
         h(
           "section",
           { className: "panel" },
-          h("p", { className: "muted" }, `${levelLabels[level] || level} · ${thoughts.length}/3 thoughts`),
+          h("p", { className: "muted" }, `${levelLabels[level] || level} · ${thoughts.length}/3 idea bursts`),
           h(
             "div",
             { className: "thought-list" },
             thoughts.length
               ? thoughts.map((item, index) => h("div", { className: "thought", key: `${item}-${index}` }, item))
-              : h("p", { className: "muted" }, "Your thinking will collect here.")
+              : h("p", { className: "muted" }, "Your idea bursts will collect here.")
           )
         ),
         h(ExportPanel, { kind: "student", payload: { copyText } })
@@ -128,7 +128,7 @@ export function SoloMode({ level, pair }) {
       { className: "print-sheet" },
       h("h1", null, "Class Thinking Lab"),
       h("h2", null, `${pair[0]} and ${pair[1]}`),
-      h("h2", null, "Thoughts"),
+      h("h2", null, "Idea Bursts"),
       thoughts.map((item, index) => h("p", { key: index }, `${index + 1}. ${item}`)),
       h("h2", null, "Final Reflective Piece"),
       h("pre", null, finalPiece)

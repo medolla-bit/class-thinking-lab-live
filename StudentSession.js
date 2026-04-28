@@ -107,7 +107,7 @@ export function StudentSession() {
       `${name}`,
       `${session.noun1} and ${session.noun2}`,
       "",
-      "Thoughts:",
+      "Idea bursts:",
       ...thoughts.map((item, index) => `${index + 1}. ${item}`),
       "",
       finalPiece
@@ -155,7 +155,7 @@ export function StudentSession() {
       h(
         "aside",
         { className: "side-stack" },
-        h("section", { className: "panel" }, h("p", { className: "muted" }, `${name} · ${session.code}`), h("p", null, `${thoughts.length}/3 thoughts submitted`)),
+        h("section", { className: "panel" }, h("p", { className: "muted" }, `${name} · ${session.code}`), h("p", null, `${thoughts.length}/3 idea bursts submitted`)),
         h(ExportPanel, { kind: "student", payload: { copyText } })
       )
     ),
@@ -165,7 +165,7 @@ export function StudentSession() {
       h("h1", null, "Class Thinking Lab"),
       h("p", null, name),
       h("h2", null, `${session.noun1} and ${session.noun2}`),
-      h("h2", null, "Thoughts"),
+      h("h2", null, "Idea Bursts"),
       thoughts.map((item, index) => h("p", { key: index }, `${index + 1}. ${item}`)),
       h("h2", null, "Final Reflective Piece"),
       h("pre", null, finalPiece)

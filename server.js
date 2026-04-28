@@ -524,15 +524,21 @@ function testNudge(noun1, noun2, thoughts) {
 }
 
 function coachPrompt({ noun1, noun2, level, currentThought, previousThoughts, round }) {
-  return `A student is trying to make a connection between two unlike things.
+  const roundNames = {
+    1: "First Connections",
+    2: "Twists + Surprises",
+    3: "Strongest Lines"
+  };
+
+  return `A student is building a list of possible connections between two unlike things.
 
 Noun pair:
 ${noun1} and ${noun2}
 
-Here is what the student just said:
+Here is the student's current idea burst (${roundNames[round] || `Burst ${round}`}):
 ${currentThought}
 
-Here are their thoughts so far:
+Here are their previous idea bursts:
 ${previousThoughts.join("\n")}
 
 Student level:
@@ -543,6 +549,7 @@ Be ChatGPT acting as a natural Thinking Coach.
 Before anything else, find something specific in the student's response that is worth continuing.
 Assume the student's thought has value, even if it is rough, literal, brief, misspelled, or uncertain.
 The main goal is creative fluency: help the student generate many possible connections between the noun pair, not just dig one idea deeper.
+The student may write a list, fragments, single words, phrases, questions, or several unrelated possibilities in one burst. Treat that as successful creative thinking.
 
 Do not follow a script.
 Do not label sections.
@@ -553,23 +560,28 @@ Do not praise vaguely. Avoid lines like "great job," "nice thinking," or "that's
 Do not make the student feel there is a single correct answer.
 Do not sound like you are assigning work.
 
-Start from the student's idea.
+Start from the student's idea burst.
 If the student uses a vivid verb or phrase, make that phrase the center of the response.
 Quote or echo a small exact phrase from the student when it helps the response feel grounded.
 Help them see what they may already be getting at.
 Use a confidence-building tone early in the response: the student should feel their thought is usable and worth developing.
-Make the student feel strong about the specific thought they just submitted.
-Point out what EACH submitted thought contributes to the growing field of ideas.
+Make the student feel strong about the specific ideas they just submitted.
+If the student gives multiple ideas, point out 2 or 3 of them and say what each adds to the growing field of connections.
 If the idea is simple, treat it as a real beginning.
 If the idea is strong, react honestly and let that moment stand out.
 Validate the move they made, then briefly show 2 or 3 other possible directions it opens.
 Encourage free association: quick possible links, surprising angles, opposites, shifts in perspective, emotional connections, physical connections, and strange-but-usable ideas.
+Format like a natural AI chat response:
+- Use short paragraphs with line breaks between shifts.
+- If the student listed multiple ideas, brief bullets are okay.
+- Do not write one dense block.
+- Avoid headings unless they feel very natural.
+
 Use this natural response shape, without labeling the parts:
-1. React briefly to the student's exact phrase as valuable.
-2. Explain how noun1 can connect to the phrase.
-3. Explain how noun2 can connect to the phrase.
-4. Name one tension, surprise, or ambiguity inside the connection.
-5. Offer a few possible next associations, lightly, so the student feels free to choose or invent another.
+1. React briefly to the idea burst as valuable.
+2. Point out several promising connections or phrases from the burst.
+3. Name one tension, surprise, ambiguity, or pattern inside the connections.
+4. Offer a few possible next associations, lightly, so the student feels free to choose or invent another.
 Possible layers include tension, consequence, hidden purpose, change over time, reversal, power, fragility, misunderstanding, protection, risk, memory, or what one noun makes possible for the other.
 Use creativity-building moves inspired by Torrance-style thinking: invite fluency, flexibility, originality, elaboration, ambiguity, incongruity, twisting the idea, and seeing through multiple perspectives.
 Do this naturally, not by naming those categories to the student.
@@ -580,10 +592,10 @@ Keep the student feeling capable.
 Keep it appropriate for the selected level.
 Write like a thoughtful person thinking beside the student in the moment.
 Vary the rhythm and wording from response to response.
-Keep it compact: usually 4 to 7 sentences.
-For round 1, especially emphasize that the thought is a valid beginning and can branch in many directions.
-For round 2, connect the second thought to the first and show how the student's range is growing.
-For round 3, help them see the range/pattern of connections they have generated.
+Keep it compact but generous: usually 2 to 4 short paragraphs or a few brief bullets plus a short closing.
+For round 1, especially emphasize that the burst is a valid beginning and can branch in many directions.
+For round 2, connect the second burst to the first and show how the student's range is growing.
+For round 3, help them see the range/pattern of connections they have generated and notice strong language for the final piece.
 For rounds 1 and 2, do not give step-by-step directions. Instead, leave them with a small cluster of possible association paths they might try next.
 Do not end with a generic question like "What do you think?" or "Can you go deeper?"
 
@@ -591,7 +603,7 @@ End with one thoughtful question only if it feels natural.
 Include "#${round} of 3 — keep connecting".
 
 The student should feel:
-"My thought has value, and now I can make more connections."`;
+"My ideas have value, and now I can make even more connections."`;
 }
 
 function nudgePrompt({ noun1, noun2, level, thoughts }) {
@@ -599,13 +611,13 @@ function nudgePrompt({ noun1, noun2, level, thoughts }) {
 
 ${noun1} and ${noun2}
 
-Here is what they have said so far:
+Here are their idea bursts so far:
 ${thoughts.join("\n")}
 
 Student level:
 ${level}
 
-Say one small thing that might help them see it differently.
+Say one small thing that might help them generate more connections.
 
 Keep it natural, short, and specific to the nouns.
 Do not use a sentence frame.
@@ -620,30 +632,32 @@ It should feel like a quick "wait... what if..." thought.`;
 }
 
 function studentPoemPrompt({ noun1, noun2, level, thoughts }) {
-  return `Turn this student's thinking into a short reflective piece.
+  return `Turn this student's idea bursts into a short reflective poem.
 
 Noun pair:
 ${noun1} and ${noun2}
 
-Student's exact thoughts:
+Student's exact idea bursts:
 ${thoughts.join("\n")}
 
 Student level:
 ${level}
 
 Use the student's actual words and phrases as much as possible.
-The final piece should be about 90 percent the student's language and 10 percent light poetic shaping from you.
+The final piece should be about 80 to 90 percent the student's language and 10 to 20 percent poetic shaping from you.
 Preserve the student's exact phrases whenever possible, including unusual wording.
 Do not introduce unrelated imagery.
 Do not make it sound like a generic AI poem.
 Stay grounded in the noun pair and the student's own thinking.
 Make it feel like their idea became clearer, not replaced.
+Make the poem sound polished enough to feel like writing, not just a transcript.
+You may vary grammar, line breaks, repetition, and order lightly to improve music and meaning.
 Keep it appropriate for the selected level.
 
-Write 5 to 9 short lines.
+Write 6 to 10 short lines.
 No title.
 No explanation before or after.
-Less is more. Let the student's words lead.`;
+Let the student's words lead, but give the ending a little lift.`;
 }
 
 function classPoemPrompt({ noun1, noun2, level, responses, variationFocus }) {
@@ -670,9 +684,10 @@ CLASS POEM:
 Use the strongest student phrases and ideas.
 Do not include student names in the poem.
 Keep it grounded in their actual words.
-Use about 90 percent student language and 10 percent light poetic shaping.
+Use about 80 to 90 percent student language and 10 to 20 percent light poetic shaping.
 Do not introduce unrelated imagery.
 Make it thoughtful, clear, and slightly poetic.
+Make it sound more polished than raw notes, but still recognizably built from student language.
 Keep it appropriate for the selected level.
 
 VARIATION POSSIBILITIES:
