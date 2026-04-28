@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: class-thinking-lab
+    env: node
+    plan: starter
+    buildCommand: ""
+    startCommand: node server.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_API_KEY
+        sync: false
