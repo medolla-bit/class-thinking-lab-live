@@ -43,22 +43,7 @@ function corsHeaders(req) {
 }
 
 const sessions = new Map();
-const compatSessions = new Map();
-
-function compatSessionSummary(session) {
-  return {
-    code: session.code,
-    noun1: session.noun1,
-    noun2: session.noun2,
-    category: session.category || session.level || "Upper Elementary",
-    prompt: session.prompt || "What hidden connection can you find between these two ideas?",
-    responses: session.responses || [],
-    displayMode: session.displayMode || "gallery",
-    displayNames: session.displayNames !== false,
-    classPoem: session.classPoem || "",
-    summary: session.summary || ""
-  };
-}
+const legacySessions = new Map();
 
 function loadDotEnv() {
   try {
@@ -1019,136 +1004,188 @@ async function api(req, res) {
   try {
     const body = await readJson(req);
 
-    // Compatibility endpoints for the Netlify front end you are using.
+
+    // Legacy Netlify frontend compatibility routes.
+    // These match the older index.html calls: /api/session/start, /api/session/:code, /api/ai/coach, etc.
     if (req.url === "/api/health" && req.method === "GET") {
-      return json(req, res, 200, { ok: true, ai: Boolean(OPENAI_API_KEY) || AI_TEST_MODE, storage: USE_SUPABASE ? "supabase" : "memory" });
+      return json(req, res, 200, {
+        ok: true,
+        ai: Boolean(OPENAI_API_KEY) || AI_TEST_MODE,
+        storage: USE_SUPABASE ? "supabase" : "memory"
+      });
     }
 
     if (req.url === "/api/session/start" && req.method === "POST") {
-      const code = sanitizeText(body.code || "TODAY", 16).toUpperCase().replace(/[^A-Z0-9]/g, "") || "TODAY";
+      const code = sanitizeText(body.code || "TODAY", 16).toUpperCase() || "TODAY";
+      const existing = legacySessions.get(code) || {};
       const session = {
         code,
-        noun1: sanitizeText(body.noun1 || "Candle", 80),
-        noun2: sanitizeText(body.noun2 || "Whisper", 80),
-        category: sanitizeText(body.category || body.mode || "Upper Elementary", 120),
-        prompt: sanitizeMultiline(body.prompt || "What hidden connection can you find between these two ideas?", 1200),
-        responses: Array.isArray(body.responses) ? body.responses : [],
-        displayMode: body.displayMode || "gallery",
-        displayNames: body.displayNames !== false,
-        classPoem: body.classPoem || "",
-        summary: body.summary || "",
-        createdAt: new Date().toISOString()
+        noun1: sanitizeText(body.noun1 || existing.noun1 || "Candle", 80),
+        noun2: sanitizeText(body.noun2 || existing.noun2 || "Whisper", 80),
+        category: sanitizeText(body.category || existing.category || body.theme || "session", 120),
+        mode: sanitizeText(body.mode || existing.mode || "Upper Elementary", 80),
+        level: body.level === "High School" ? "High School" : "Upper Elementary",
+        prompt: sanitizeMultiline(body.prompt || existing.prompt || "What hidden connection can you find between these two ideas?", 1000),
+        responses: Array.isArray(existing.responses) ? existing.responses : [],
+        displayMode: body.displayMode || existing.displayMode || "gallery",
+        displayNames: body.displayNames !== undefined ? Boolean(body.displayNames) : existing.displayNames !== false,
+        classPoem: existing.classPoem || "",
+        summary: existing.summary || "",
+        createdAt: existing.createdAt || new Date().toISOString()
       };
-      compatSessions.set(code, session);
-      return json(req, res, 200, { session: compatSessionSummary(session) });
+      legacySessions.set(code, session);
+      return json(req, res, 200, { session });
     }
 
     if (req.url?.startsWith("/api/session/") && req.method === "GET") {
-      const parts = req.url.split("/");
-      const code = decodeURIComponent(parts[3] || "").toUpperCase();
-      const session = compatSessions.get(code);
-      if (!session) return json(req, res, 404, { error: "Session not found. Start it from the Teacher screen first." });
-      return json(req, res, 200, { session: compatSessionSummary(session) });
+      const code = decodeURIComponent(req.url.split("/api/session/")[1] || "").toUpperCase();
+      const session = legacySessions.get(code);
+      if (!session) return json(req, res, 404, { error: "Session not found" });
+      return json(req, res, 200, { session });
     }
 
     if (req.url?.match(/^\/api\/session\/[^/]+\/submit$/) && req.method === "POST") {
       const code = decodeURIComponent(req.url.split("/")[3] || "").toUpperCase();
-      const session = compatSessions.get(code);
+      const session = legacySessions.get(code);
       if (!session) return json(req, res, 404, { error: "Session not found" });
-      const name = sanitizeText(body.name, 80) || "Student";
-      const rounds = Array.isArray(body.rounds) ? body.rounds.map((x) => sanitizeText(x, 700)).filter(Boolean).slice(0, 3) : [];
-      if (!rounds.length) return json(req, res, 400, { error: "Missing student response" });
+
+      const name = sanitizeText(body.name, 80);
+      const rounds = Array.isArray(body.rounds) ? body.rounds.map((item) => sanitizeText(item, 900)).filter(Boolean).slice(0, 3) : [];
+      if (!name || !rounds.length) return json(req, res, 400, { error: "Missing name or response" });
+
+      const responseText = rounds.join("\n\n");
       let poem = "";
       let thinking = "";
       let influence = "";
+
       try {
-        poem = await openAIText(studentPoemPrompt({ noun1: session.noun1, noun2: session.noun2, level: "Upper Elementary", thoughts: rounds }), "Upper Elementary");
-        thinking = await openAIText(`Briefly name the strongest thinking move in this student's ideas. Keep it teacher-friendly and one sentence.\n\nNoun pair: ${session.noun1} and ${session.noun2}\nStudent ideas:\n${rounds.join("\n")}`, "Upper Elementary");
-        influence = await openAIText(`Briefly explain how this student's idea could influence a class poem. One sentence.\n\nNoun pair: ${session.noun1} and ${session.noun2}\nStudent ideas:\n${rounds.join("\n")}`, "Upper Elementary");
+        poem = await openAIText(studentPoemPrompt({
+          noun1: session.noun1,
+          noun2: session.noun2,
+          level: session.level || "Upper Elementary",
+          thoughts: rounds
+        }), session.level || "Upper Elementary");
+
+        const coach = await openAIText(coachPrompt({
+          noun1: session.noun1,
+          noun2: session.noun2,
+          level: session.level || "Upper Elementary",
+          currentThought: responseText,
+          previousThoughts: rounds.slice(0, -1),
+          round: Math.min(3, rounds.length)
+        }), session.level || "Upper Elementary");
+
+        thinking = coach;
+        influence = "This response adds to the class connection by offering another possible angle for the shared poem.";
       } catch (error) {
         poem = rounds.join("\n");
-        thinking = "The student generated connections across the three rounds.";
-        influence = "These words can contribute phrases and images to the class poem.";
+        thinking = "Saved. AI shaping was not available for this response.";
+        influence = "This response adds another student perspective to the class collection.";
       }
-      const response = {
+
+      const entry = {
         id: randomUUID(),
         name,
-        responseText: rounds.join("\n\n"),
+        rounds,
+        responseText,
         thinking,
         influence,
         poem,
         approved: false,
         createdAt: new Date().toISOString()
       };
-      session.responses.push(response);
-      return json(req, res, 200, { ok: true, response, session: compatSessionSummary(session) });
+
+      session.responses.push(entry);
+      legacySessions.set(code, session);
+      return json(req, res, 200, { session, response: entry });
     }
 
     if (req.url?.match(/^\/api\/session\/[^/]+\/approve$/) && req.method === "POST") {
       const code = decodeURIComponent(req.url.split("/")[3] || "").toUpperCase();
-      const session = compatSessions.get(code);
+      const session = legacySessions.get(code);
       if (!session) return json(req, res, 404, { error: "Session not found" });
-      const item = session.responses.find((r) => r.id === body.id);
-      if (item) item.approved = Boolean(body.approved);
-      return json(req, res, 200, { session: compatSessionSummary(session) });
+      const id = String(body.id || "");
+      const approved = Boolean(body.approved);
+      session.responses = (session.responses || []).map((item) => item.id === id ? { ...item, approved } : item);
+      legacySessions.set(code, session);
+      return json(req, res, 200, { session });
     }
 
     if (req.url?.match(/^\/api\/session\/[^/]+\/responses$/) && req.method === "DELETE") {
       const code = decodeURIComponent(req.url.split("/")[3] || "").toUpperCase();
-      const session = compatSessions.get(code);
+      const session = legacySessions.get(code);
       if (!session) return json(req, res, 404, { error: "Session not found" });
       session.responses = [];
       session.classPoem = "";
       session.summary = "";
-      return json(req, res, 200, { session: compatSessionSummary(session) });
+      legacySessions.set(code, session);
+      return json(req, res, 200, { session });
     }
 
     if (req.url?.match(/^\/api\/session\/[^/]+\/display$/) && req.method === "POST") {
       const code = decodeURIComponent(req.url.split("/")[3] || "").toUpperCase();
-      const session = compatSessions.get(code);
+      const session = legacySessions.get(code);
       if (!session) return json(req, res, 404, { error: "Session not found" });
-      if (body.displayMode) session.displayMode = body.displayMode;
+      if (body.displayMode) session.displayMode = sanitizeText(body.displayMode, 40);
       if (body.displayNames !== undefined) session.displayNames = Boolean(body.displayNames);
-      return json(req, res, 200, { session: compatSessionSummary(session) });
+      legacySessions.set(code, session);
+      return json(req, res, 200, { session });
     }
 
     if (req.url === "/api/ai/coach" && req.method === "POST") {
       const noun1 = sanitizeText(body.noun1, 80);
       const noun2 = sanitizeText(body.noun2, 80);
-      const text = sanitizeText(body.text || body.currentThought, 700);
-      const previousResponses = Array.isArray(body.previousResponses) ? body.previousResponses : [];
+      const text = sanitizeText(body.text || body.currentThought, 900);
+      const previousResponses = sanitizeThoughts(body.previousResponses || body.thoughts || []);
       const round = roundNumber(body.round, previousResponses);
-      const reply = await openAIText(coachPrompt({ noun1, noun2, level: "Upper Elementary", currentThought: text, previousThoughts: previousResponses, round }), "Upper Elementary");
+      const level = body.level === "High School" ? "High School" : "Upper Elementary";
+      const reply = await openAIText(coachPrompt({ noun1, noun2, level, currentThought: text, previousThoughts: previousResponses, round }), level);
       return json(req, res, 200, { reply, text: reply });
     }
 
     if (req.url === "/api/ai/class-poem" && req.method === "POST") {
       const code = sanitizeText(body.code, 16).toUpperCase();
-      const session = compatSessions.get(code);
+      const session = legacySessions.get(code);
       if (!session) return json(req, res, 404, { error: "Session not found" });
-      const selected = Array.isArray(body.selectedIds) && body.selectedIds.length
-        ? session.responses.filter((r) => body.selectedIds.includes(r.id))
-        : session.responses.filter((r) => r.approved);
-      const responses = (selected.length ? selected : session.responses).map((r) => `${r.name}: ${r.responseText}`).join("\n\n");
-      const poem = await openAIText(classPoemPrompt({ noun1: session.noun1, noun2: session.noun2, level: "Upper Elementary", responses, variationFocus: "balanced class poem" }), "Upper Elementary");
+      const selectedIds = Array.isArray(body.selectedIds) ? body.selectedIds.map(String) : [];
+      const chosen = (session.responses || []).filter((item) => selectedIds.length ? selectedIds.includes(item.id) : item.approved);
+      const pool = chosen.length ? chosen : (session.responses || []);
+      const responses = pool.map((item) => `${item.name}: ${item.responseText}`).join("\n\n");
+      const poem = await openAIText(classPoemPrompt({
+        noun1: session.noun1,
+        noun2: session.noun2,
+        level: session.level || "Upper Elementary",
+        responses,
+        variationFocus: body.variationFocus || ""
+      }), session.level || "Upper Elementary");
       session.classPoem = poem;
-      return json(req, res, 200, { poem });
+      legacySessions.set(code, session);
+      return json(req, res, 200, { poem, session });
     }
 
     if (req.url === "/api/ai/summary" && req.method === "POST") {
       const code = sanitizeText(body.code, 16).toUpperCase();
-      const session = compatSessions.get(code);
+      const session = legacySessions.get(code);
       if (!session) return json(req, res, 404, { error: "Session not found" });
-      const responses = session.responses.map((r) => `${r.name}: ${r.responseText}`).join("\n\n");
-      const summary = await openAIText(`Write a short teacher summary of the class thinking. Name patterns, strong moves, and possible next discussion points.\n\nNoun pair: ${session.noun1} and ${session.noun2}\n\nResponses:\n${responses}`, "Upper Elementary");
+      const responses = (session.responses || []).map((item) => `${item.name}: ${item.responseText}`).join("\n\n");
+      const prompt = `Summarize the class thinking for the noun pair ${session.noun1} and ${session.noun2}. Name the main patterns, surprising connections, and possible next teaching moves. Keep it concise and teacher-friendly.\n\nStudent responses:\n${responses}`;
+      const summary = await openAIText(prompt, session.level || "Upper Elementary");
       session.summary = summary;
-      return json(req, res, 200, { summary });
+      legacySessions.set(code, session);
+      return json(req, res, 200, { summary, session });
     }
 
     if (req.url === "/api/ai/revise-poem" && req.method === "POST") {
-      const instruction = sanitizeText(body.instruction, 300);
-      const poem = sanitizeMultiline(body.poem, 6000);
-      const revised = await openAIText(`Revise this class poem using this teacher instruction: ${instruction}\n\nKeep student thinking intact.\n\nPoem:\n${poem}`, "Upper Elementary");
+      const code = sanitizeText(body.code, 16).toUpperCase();
+      const session = legacySessions.get(code);
+      const instruction = sanitizeText(body.instruction, 600);
+      const poem = sanitizeMultiline(body.poem || session?.classPoem || "", 6000);
+      const prompt = `Revise this class poem according to the instruction. Keep student ideas intact and appropriate for upper elementary students.\n\nInstruction: ${instruction}\n\nPoem:\n${poem}`;
+      const revised = await openAIText(prompt, session?.level || "Upper Elementary");
+      if (session) {
+        session.classPoem = revised;
+        legacySessions.set(code, session);
+      }
       return json(req, res, 200, { revised });
     }
 
