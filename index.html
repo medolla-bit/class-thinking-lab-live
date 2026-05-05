@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Class Thinking Lab</title>
+
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #0f172a;
+        color: white;
+        text-align: center;
+        padding: 40px;
+      }
+
+      input {
+        padding: 12px;
+        width: 260px;
+        border-radius: 8px;
+        border: none;
+        margin-bottom: 12px;
+      }
+
+      button {
+        padding: 12px 20px;
+        border-radius: 8px;
+        border: none;
+        background: #4f46e5;
+        color: white;
+        cursor: pointer;
+      }
+
+      #response {
+        margin-top: 20px;
+        font-size: 18px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>Class Thinking Lab</h1>
+
+    <input id="input" placeholder="Write your idea..." />
+    <br><br>
+
+    <button onclick="send()">Send Idea</button>
+
+    <p id="response"></p>
+
+    <script>
+      async function send() {
+        const text = document.getElementById("input").value;
+
+        const res = await fetch("/api/ai/coach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text,
+            round: 1,
+            noun1: "Candle",
+            noun2: "Whisper",
+            previousResponses: []
+          })
+        });
+
+        const data = await res.json();
+        document.getElementById("response").innerText = data.reply;
+      }
+    </script>
+  </body>
+</html>
