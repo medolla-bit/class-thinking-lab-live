@@ -15,6 +15,33 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 
+// CORS: allow your Netlify front end to talk to this Render backend.
+// The preview URL and localhost options make testing easier.
+const ALLOWED_ORIGINS = new Set([
+  "https://nounpairthinkinglab.netlify.app",
+  "http://localhost:3000",
+  "http://localhost:8888",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:8888"
+]);
+
+function getCorsOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return "*";
+  if (ALLOWED_ORIGINS.has(origin) || origin.endsWith(".netlify.app")) return origin;
+  return "https://nounpairthinkinglab.netlify.app";
+}
+
+function corsHeaders(req) {
+  return {
+    "Access-Control-Allow-Origin": getCorsOrigin(req),
+    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin"
+  };
+}
+
 const sessions = new Map();
 
 function loadDotEnv() {
@@ -88,8 +115,11 @@ const mimeTypes = {
   ".svg": "image/svg+xml"
 };
 
-function json(res, status, body) {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+function json(req, res, status, body) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    ...corsHeaders(req)
+  });
   res.end(JSON.stringify(body));
 }
 
@@ -981,7 +1011,7 @@ async function api(req, res) {
       const previousThoughts = sanitizeThoughts(body.previousThoughts);
       const round = roundNumber(body.round, previousThoughts);
       const text = await openAIText(coachPrompt({ noun1, noun2, level, currentThought, previousThoughts, round }), level);
-      return json(res, 200, { text });
+      return json(req, res, 200, { text });
     }
 
     if (req.url === "/api/nudge" && req.method === "POST") {
@@ -990,7 +1020,7 @@ async function api(req, res) {
       const level = body.level === "High School" ? "High School" : "Upper Elementary";
       const thoughts = sanitizeThoughts(body.thoughts);
       const text = await openAIText(nudgePrompt({ noun1, noun2, level, thoughts }), level);
-      return json(res, 200, { text });
+      return json(req, res, 200, { text });
     }
 
     if (req.url === "/api/student-poem" && req.method === "POST") {
@@ -999,7 +1029,7 @@ async function api(req, res) {
       const level = body.level === "High School" ? "High School" : "Upper Elementary";
       const thoughts = sanitizeThoughts(body.thoughts);
       const text = await openAIText(studentPoemPrompt({ noun1, noun2, level, thoughts }), level);
-      return json(res, 200, { text });
+      return json(req, res, 200, { text });
     }
 
     if (req.url === "/api/class-poem" && req.method === "POST") {
@@ -1009,13 +1039,13 @@ async function api(req, res) {
       const responses = sanitizeMultiline(body.responses, 12000);
       const variationFocus = sanitizeText(body.variationFocus, 220);
       const text = await openAIText(classPoemPrompt({ noun1, noun2, level, responses, variationFocus }), level);
-      return json(res, 200, { text });
+      return json(req, res, 200, { text });
     }
 
     if (req.url === "/api/noun-pair" && req.method === "POST") {
       const level = body.level === "High School" ? "High School" : "Upper Elementary";
       const text = await openAIText(nounPairPrompt(level), level);
-      return json(res, 200, { pair: parseGeneratedPair(text, level) });
+      return json(req, res, 200, { pair: parseGeneratedPair(text, level) });
     }
 
     if (req.url === "/api/sessions" && req.method === "POST") {
@@ -1028,22 +1058,22 @@ async function api(req, res) {
         noun1: sanitizeText(pair[0], 80),
         noun2: sanitizeText(pair[1], 80)
       });
-      return json(res, 200, session);
+      return json(req, res, 200, session);
     }
 
     if (req.url?.startsWith("/api/sessions/") && req.method === "GET") {
       const code = decodeURIComponent(req.url.split("/").pop() || "").toUpperCase();
       const session = await storage.getSession(code);
-      if (!session) return json(res, 404, { error: "Session not found" });
-      return json(res, 200, session);
+      if (!session) return json(req, res, 404, { error: "Session not found" });
+      return json(req, res, 200, session);
     }
 
     if (req.url === "/api/join" && req.method === "POST") {
       const code = sanitizeText(body.code, 12).toUpperCase();
       const name = sanitizeText(body.name, 80);
       const joined = await storage.joinSession({ code, name });
-      if (!joined) return json(res, 404, { error: "Session not found" });
-      return json(res, 200, joined);
+      if (!joined) return json(req, res, 404, { error: "Session not found" });
+      return json(req, res, 200, joined);
     }
 
     if (req.url === "/api/session-thought" && req.method === "POST") {
@@ -1052,16 +1082,16 @@ async function api(req, res) {
       const thought = sanitizeText(body.thought, 700);
       const coach = sanitizeMultiline(body.coach, 1600);
       const student = await storage.addThought({ code, studentId, thought, coach });
-      if (!student) return json(res, 404, { error: "Session not found" });
-      return json(res, 200, { student });
+      if (!student) return json(req, res, 404, { error: "Session not found" });
+      return json(req, res, 200, { student });
     }
 
     if (req.url === "/api/session-nudge" && req.method === "POST") {
       const code = sanitizeText(body.code, 12).toUpperCase();
       const studentId = String(body.studentId || "");
       const nudgeCount = await storage.incrementNudge({ code, studentId });
-      if (nudgeCount === null) return json(res, 404, { error: "Session not found" });
-      return json(res, 200, { nudgeCount });
+      if (nudgeCount === null) return json(req, res, 404, { error: "Session not found" });
+      return json(req, res, 200, { nudgeCount });
     }
 
     if (req.url === "/api/session-final" && req.method === "POST") {
@@ -1069,22 +1099,22 @@ async function api(req, res) {
       const studentId = String(body.studentId || "");
       const finalPiece = sanitizeMultiline(body.finalPiece, 2200);
       const student = await storage.saveFinal({ code, studentId, finalPiece });
-      if (!student) return json(res, 404, { error: "Session not found" });
-      return json(res, 200, { student });
+      if (!student) return json(req, res, 404, { error: "Session not found" });
+      return json(req, res, 200, { student });
     }
 
     if (req.url === "/api/session-class-poem" && req.method === "POST") {
       const code = sanitizeText(body.code, 12).toUpperCase();
       const classPoem = sanitizeMultiline(body.classPoem, 6000);
       const session = await storage.saveClassPoem({ code, classPoem });
-      if (!session) return json(res, 404, { error: "Session not found" });
-      return json(res, 200, session);
+      if (!session) return json(req, res, 404, { error: "Session not found" });
+      return json(req, res, 200, session);
     }
 
-    return json(res, 404, { error: "Not found" });
+    return json(req, res, 404, { error: "Not found" });
   } catch (error) {
     console.error(error);
-    return json(res, 500, { error: "Something went wrong. Try again." });
+    return json(req, res, 500, { error: "Something went wrong. Try again." });
   }
 }
 
@@ -1095,16 +1125,22 @@ async function serveStatic(req, res) {
   const filePath = join(PUBLIC_DIR, safePath);
   try {
     const content = await readFile(filePath);
-    res.writeHead(200, { "Content-Type": mimeTypes[extname(filePath)] || "application/octet-stream" });
+    res.writeHead(200, { "Content-Type": mimeTypes[extname(filePath)] || "application/octet-stream", ...corsHeaders(req) });
     res.end(content);
   } catch {
     const content = await readFile(join(PUBLIC_DIR, "index.html"));
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", ...corsHeaders(req) });
     res.end(content);
   }
 }
 
 createServer((req, res) => {
+  // This answers the browser's CORS preflight check before any API call.
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, corsHeaders(req));
+    return res.end();
+  }
+
   if (req.url?.startsWith("/api/")) return api(req, res);
   return serveStatic(req, res);
 }).listen(PORT, () => {
@@ -1117,4 +1153,5 @@ createServer((req, res) => {
     console.log("Live AI needs OPENAI_API_KEY. Add it to .env or your environment.");
   }
   console.log(USE_SUPABASE ? "Database storage is on using Supabase." : "Database storage is off. Using temporary in-memory sessions.");
+  console.log("CORS is enabled for Netlify front ends.");
 });
