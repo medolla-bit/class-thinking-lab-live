@@ -43,6 +43,22 @@ function corsHeaders(req) {
 }
 
 const sessions = new Map();
+const compatSessions = new Map();
+
+function compatSessionSummary(session) {
+  return {
+    code: session.code,
+    noun1: session.noun1,
+    noun2: session.noun2,
+    category: session.category || session.level || "Upper Elementary",
+    prompt: session.prompt || "What hidden connection can you find between these two ideas?",
+    responses: session.responses || [],
+    displayMode: session.displayMode || "gallery",
+    displayNames: session.displayNames !== false,
+    classPoem: session.classPoem || "",
+    summary: session.summary || ""
+  };
+}
 
 function loadDotEnv() {
   try {
@@ -1002,6 +1018,139 @@ const storage = USE_SUPABASE ? supabaseStorage : memoryStorage;
 async function api(req, res) {
   try {
     const body = await readJson(req);
+
+    // Compatibility endpoints for the Netlify front end you are using.
+    if (req.url === "/api/health" && req.method === "GET") {
+      return json(req, res, 200, { ok: true, ai: Boolean(OPENAI_API_KEY) || AI_TEST_MODE, storage: USE_SUPABASE ? "supabase" : "memory" });
+    }
+
+    if (req.url === "/api/session/start" && req.method === "POST") {
+      const code = sanitizeText(body.code || "TODAY", 16).toUpperCase().replace(/[^A-Z0-9]/g, "") || "TODAY";
+      const session = {
+        code,
+        noun1: sanitizeText(body.noun1 || "Candle", 80),
+        noun2: sanitizeText(body.noun2 || "Whisper", 80),
+        category: sanitizeText(body.category || body.mode || "Upper Elementary", 120),
+        prompt: sanitizeMultiline(body.prompt || "What hidden connection can you find between these two ideas?", 1200),
+        responses: Array.isArray(body.responses) ? body.responses : [],
+        displayMode: body.displayMode || "gallery",
+        displayNames: body.displayNames !== false,
+        classPoem: body.classPoem || "",
+        summary: body.summary || "",
+        createdAt: new Date().toISOString()
+      };
+      compatSessions.set(code, session);
+      return json(req, res, 200, { session: compatSessionSummary(session) });
+    }
+
+    if (req.url?.startsWith("/api/session/") && req.method === "GET") {
+      const parts = req.url.split("/");
+      const code = decodeURIComponent(parts[3] || "").toUpperCase();
+      const session = compatSessions.get(code);
+      if (!session) return json(req, res, 404, { error: "Session not found. Start it from the Teacher screen first." });
+      return json(req, res, 200, { session: compatSessionSummary(session) });
+    }
+
+    if (req.url?.match(/^\/api\/session\/[^/]+\/submit$/) && req.method === "POST") {
+      const code = decodeURIComponent(req.url.split("/")[3] || "").toUpperCase();
+      const session = compatSessions.get(code);
+      if (!session) return json(req, res, 404, { error: "Session not found" });
+      const name = sanitizeText(body.name, 80) || "Student";
+      const rounds = Array.isArray(body.rounds) ? body.rounds.map((x) => sanitizeText(x, 700)).filter(Boolean).slice(0, 3) : [];
+      if (!rounds.length) return json(req, res, 400, { error: "Missing student response" });
+      let poem = "";
+      let thinking = "";
+      let influence = "";
+      try {
+        poem = await openAIText(studentPoemPrompt({ noun1: session.noun1, noun2: session.noun2, level: "Upper Elementary", thoughts: rounds }), "Upper Elementary");
+        thinking = await openAIText(`Briefly name the strongest thinking move in this student's ideas. Keep it teacher-friendly and one sentence.\n\nNoun pair: ${session.noun1} and ${session.noun2}\nStudent ideas:\n${rounds.join("\n")}`, "Upper Elementary");
+        influence = await openAIText(`Briefly explain how this student's idea could influence a class poem. One sentence.\n\nNoun pair: ${session.noun1} and ${session.noun2}\nStudent ideas:\n${rounds.join("\n")}`, "Upper Elementary");
+      } catch (error) {
+        poem = rounds.join("\n");
+        thinking = "The student generated connections across the three rounds.";
+        influence = "These words can contribute phrases and images to the class poem.";
+      }
+      const response = {
+        id: randomUUID(),
+        name,
+        responseText: rounds.join("\n\n"),
+        thinking,
+        influence,
+        poem,
+        approved: false,
+        createdAt: new Date().toISOString()
+      };
+      session.responses.push(response);
+      return json(req, res, 200, { ok: true, response, session: compatSessionSummary(session) });
+    }
+
+    if (req.url?.match(/^\/api\/session\/[^/]+\/approve$/) && req.method === "POST") {
+      const code = decodeURIComponent(req.url.split("/")[3] || "").toUpperCase();
+      const session = compatSessions.get(code);
+      if (!session) return json(req, res, 404, { error: "Session not found" });
+      const item = session.responses.find((r) => r.id === body.id);
+      if (item) item.approved = Boolean(body.approved);
+      return json(req, res, 200, { session: compatSessionSummary(session) });
+    }
+
+    if (req.url?.match(/^\/api\/session\/[^/]+\/responses$/) && req.method === "DELETE") {
+      const code = decodeURIComponent(req.url.split("/")[3] || "").toUpperCase();
+      const session = compatSessions.get(code);
+      if (!session) return json(req, res, 404, { error: "Session not found" });
+      session.responses = [];
+      session.classPoem = "";
+      session.summary = "";
+      return json(req, res, 200, { session: compatSessionSummary(session) });
+    }
+
+    if (req.url?.match(/^\/api\/session\/[^/]+\/display$/) && req.method === "POST") {
+      const code = decodeURIComponent(req.url.split("/")[3] || "").toUpperCase();
+      const session = compatSessions.get(code);
+      if (!session) return json(req, res, 404, { error: "Session not found" });
+      if (body.displayMode) session.displayMode = body.displayMode;
+      if (body.displayNames !== undefined) session.displayNames = Boolean(body.displayNames);
+      return json(req, res, 200, { session: compatSessionSummary(session) });
+    }
+
+    if (req.url === "/api/ai/coach" && req.method === "POST") {
+      const noun1 = sanitizeText(body.noun1, 80);
+      const noun2 = sanitizeText(body.noun2, 80);
+      const text = sanitizeText(body.text || body.currentThought, 700);
+      const previousResponses = Array.isArray(body.previousResponses) ? body.previousResponses : [];
+      const round = roundNumber(body.round, previousResponses);
+      const reply = await openAIText(coachPrompt({ noun1, noun2, level: "Upper Elementary", currentThought: text, previousThoughts: previousResponses, round }), "Upper Elementary");
+      return json(req, res, 200, { reply, text: reply });
+    }
+
+    if (req.url === "/api/ai/class-poem" && req.method === "POST") {
+      const code = sanitizeText(body.code, 16).toUpperCase();
+      const session = compatSessions.get(code);
+      if (!session) return json(req, res, 404, { error: "Session not found" });
+      const selected = Array.isArray(body.selectedIds) && body.selectedIds.length
+        ? session.responses.filter((r) => body.selectedIds.includes(r.id))
+        : session.responses.filter((r) => r.approved);
+      const responses = (selected.length ? selected : session.responses).map((r) => `${r.name}: ${r.responseText}`).join("\n\n");
+      const poem = await openAIText(classPoemPrompt({ noun1: session.noun1, noun2: session.noun2, level: "Upper Elementary", responses, variationFocus: "balanced class poem" }), "Upper Elementary");
+      session.classPoem = poem;
+      return json(req, res, 200, { poem });
+    }
+
+    if (req.url === "/api/ai/summary" && req.method === "POST") {
+      const code = sanitizeText(body.code, 16).toUpperCase();
+      const session = compatSessions.get(code);
+      if (!session) return json(req, res, 404, { error: "Session not found" });
+      const responses = session.responses.map((r) => `${r.name}: ${r.responseText}`).join("\n\n");
+      const summary = await openAIText(`Write a short teacher summary of the class thinking. Name patterns, strong moves, and possible next discussion points.\n\nNoun pair: ${session.noun1} and ${session.noun2}\n\nResponses:\n${responses}`, "Upper Elementary");
+      session.summary = summary;
+      return json(req, res, 200, { summary });
+    }
+
+    if (req.url === "/api/ai/revise-poem" && req.method === "POST") {
+      const instruction = sanitizeText(body.instruction, 300);
+      const poem = sanitizeMultiline(body.poem, 6000);
+      const revised = await openAIText(`Revise this class poem using this teacher instruction: ${instruction}\n\nKeep student thinking intact.\n\nPoem:\n${poem}`, "Upper Elementary");
+      return json(req, res, 200, { revised });
+    }
 
     if (req.url === "/api/coach" && req.method === "POST") {
       const noun1 = sanitizeText(body.noun1, 80);
